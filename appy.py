@@ -4,13 +4,12 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import pandas as pd
-import numpy as np
 from datetime import datetime
 
-st.set_page_config(page_title="Cuaca Kalimantan Barat", layout="wide")
+st.set_page_config(page_title="Prakiraan Cuaca Wilayah Indonesia", layout="wide")
 
-st.title("📡 Prakiraan Cuaca Kalimantan Barat")
-st.caption("Data GFS 0.25° dari NOMADS (NOAA) - Realtime")
+st.title("📡 Global Forecast System Viewer (Realtime via NOMADS)")
+st.header("Web Hasil Pembelajaran Pengelolaan Informasi Meteorologi")
 
 @st.cache_data
 def load_dataset(run_date, run_hour):
@@ -18,13 +17,14 @@ def load_dataset(run_date, run_hour):
     ds = xr.open_dataset(base_url)
     return ds
 
-# Sidebar input
 st.sidebar.title("⚙️ Pengaturan")
+
+# Input pengguna
 today = datetime.utcnow()
 run_date = st.sidebar.date_input("Tanggal Run GFS (UTC)", today.date())
 run_hour = st.sidebar.selectbox("Jam Run GFS (UTC)", ["00", "06", "12", "18"])
-forecast_hour = st.sidebar.slider("Prakiraan ke depan (jam)", 0, 240, 0, step=1)
-parameter = st.sidebar.selectbox("Pilih Parameter Cuaca", [
+forecast_hour = st.sidebar.slider("Jam ke depan", 0, 240, 0, step=1)
+parameter = st.sidebar.selectbox("Parameter", [
     "Curah Hujan per jam (pratesfc)",
     "Suhu Permukaan (tmp2m)",
     "Angin Permukaan (ugrd10m & vgrd10m)",
@@ -34,91 +34,81 @@ parameter = st.sidebar.selectbox("Pilih Parameter Cuaca", [
 if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     try:
         ds = load_dataset(run_date.strftime("%Y%m%d"), run_hour)
-        st.success("✅ Dataset berhasil dimuat")
+        st.success("Dataset berhasil dimuat.")
     except Exception as e:
-        st.error("❌ Gagal memuat data.")
-        st.exception(e)
+        st.error(f"Gagal memuat data: {e}")
         st.stop()
 
-    is_vector = False
     is_contour = False
+    is_vector = False
 
-    # Parameter spesifik
     if "pratesfc" in parameter:
         var = ds["pratesfc"][forecast_hour, :, :] * 3600
         label = "Curah Hujan (mm/jam)"
         cmap = "Blues"
-        vmin, vmax = 0, 50
     elif "tmp2m" in parameter:
         var = ds["tmp2m"][forecast_hour, :, :] - 273.15
-        label = "Suhu Permukaan (°C)"
+        label = "Suhu (°C)"
         cmap = "coolwarm"
-        vmin, vmax = 20, 35
     elif "ugrd10m" in parameter:
         u = ds["ugrd10m"][forecast_hour, :, :]
         v = ds["vgrd10m"][forecast_hour, :, :]
-        speed = (u**2 + v**2)**0.5 * 1.94384  # m/s ke knot
+        speed = (u**2 + v**2)**0.5 * 1.94384  # konversi ke knot
         var = speed
         label = "Kecepatan Angin (knot)"
-        cmap = "YlGnBu"
+        cmap = plt.cm.get_cmap("RdYlGn_r", 10)
         is_vector = True
-        vmin, vmax = 0, 40
     elif "prmsl" in parameter:
         var = ds["prmslmsl"][forecast_hour, :, :] / 100
         label = "Tekanan Permukaan Laut (hPa)"
-        cmap = "viridis"
+        cmap = "cool"
         is_contour = True
-        vmin, vmax = 1000, 1020
     else:
         st.warning("Parameter tidak dikenali.")
         st.stop()
 
-    # Fokus Kalimantan Barat
-    lon_min, lon_max = 108, 114
-    lat_min, lat_max = -1.5, 2.0
-    var = var.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
+    # Filter wilayah Indonesia: 90 - 150 BT (lon), -15 - 15 LS/LU (lat)
+    var = var.sel(lat=slice(-15, 15), lon=slice(90, 150))
+
     if is_vector:
-        u = u.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
-        v = v.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
+        u = u.sel(lat=slice(-15, 15), lon=slice(90, 150))
+        v = v.sel(lat=slice(-15, 15), lon=slice(90, 150))
 
-    # Buat meshgrid
-    lon2d, lat2d = np.meshgrid(var.lon, var.lat)
-
-    # Plotting
-    fig = plt.figure(figsize=(8, 6))
+    # Buat plot dengan cartopy
+    fig = plt.figure(figsize=(10, 6))
     ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+    ax.set_extent([90, 150, -15, 15], crs=ccrs.PlateCarree())
 
+    # Format waktu validasi
     valid_time = ds.time[forecast_hour].values
     valid_dt = pd.to_datetime(str(valid_time))
     valid_str = valid_dt.strftime("%HUTC %a %d %b %Y")
     tstr = f"t+{forecast_hour:03d}"
 
-    ax.set_title(f"{label}\nValid {valid_str}", loc="left", fontsize=9, fontweight="bold")
-    ax.set_title(f"GFS {tstr}", loc="right", fontsize=9)
+    title_left = f"{label}Valid {valid_str}"
+    title_right = f"GFS{tstr}"
+
+    ax.set_title(title_left, loc="left", fontsize=10, fontweight="bold")
+    ax.set_title(title_right, loc="right", fontsize=10, fontweight="bold")
 
     if is_contour:
-        cs = ax.contour(lon2d, lat2d, var.values, levels=15, colors='black', linewidths=0.6)
-        ax.clabel(cs, fmt="%.0f", fontsize=7)
+        cs = ax.contour(var.lon, var.lat, var.values, levels=15, colors='black', linewidths=0.8, transform=ccrs.PlateCarree())
+        ax.clabel(cs, fmt="%d", colors='black', fontsize=8)
+        
     else:
-        im = ax.pcolormesh(lon2d, lat2d, var.values,
-                           cmap=cmap, vmin=vmin, vmax=vmax,
-                           transform=ccrs.PlateCarree())
+        im = ax.pcolormesh(var.lon, var.lat, var.values,
+                   cmap=cmap, vmin=0, vmax=50,
+                   transform=ccrs.PlateCarree())
         cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.02)
         cbar.set_label(label)
-
         if is_vector:
-            lon_q, lat_q = np.meshgrid(var.lon[::3], var.lat[::3])
-            ax.quiver(lon_q, lat_q,
-                      u.values[::3, ::3], v.values[::3, ::3],
+            ax.quiver(var.lon[::5], var.lat[::5],
+                      u.values[::5, ::5], v.values[::5, ::5],
                       transform=ccrs.PlateCarree(), scale=700, width=0.002, color='black')
-
-    # Tambahan peta
+        
+    # Tambah fitur peta
     ax.coastlines(resolution='10m', linewidth=0.8)
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
-    ax.gridlines(draw_labels=True, linestyle="--", color="gray", alpha=0.5)
 
     st.pyplot(fig)
-
-   
