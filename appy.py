@@ -8,8 +8,8 @@ from datetime import datetime
 
 st.set_page_config(page_title="Prakiraan Cuaca Kalimantan Barat", layout="wide")
 
-st.title("📡 Prakiraan Cuaca GFS - Kalimantan Barat")
-st.header("Data Realtime dari Global Forecast System via NOMADS")
+st.title("📡 Prakiraan Cuaca Wilayah Kalimantan Barat")
+st.caption("Data Global Forecast System (GFS 0.25°) via NOMADS - NOAA")
 
 @st.cache_data
 def load_dataset(run_date, run_hour):
@@ -17,30 +17,32 @@ def load_dataset(run_date, run_hour):
     ds = xr.open_dataset(base_url)
     return ds
 
-st.sidebar.title("⚙️ Pengaturan")
-
+# Sidebar inputs
+st.sidebar.title("⚙️ Pengaturan Peta Cuaca")
 today = datetime.utcnow()
 run_date = st.sidebar.date_input("Tanggal Run GFS (UTC)", today.date())
 run_hour = st.sidebar.selectbox("Jam Run GFS (UTC)", ["00", "06", "12", "18"])
-forecast_hour = st.sidebar.slider("Jam ke depan", 0, 240, 0, step=1)
-parameter = st.sidebar.selectbox("Parameter", [
+forecast_hour = st.sidebar.slider("Prakiraan ke depan (jam)", 0, 240, 0, step=1)
+parameter = st.sidebar.selectbox("Pilih Parameter Cuaca", [
     "Curah Hujan per jam (pratesfc)",
     "Suhu Permukaan (tmp2m)",
     "Angin Permukaan (ugrd10m & vgrd10m)",
     "Tekanan Permukaan Laut (prmslmsl)"
 ])
 
+# Tombol tampilkan
 if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     try:
         ds = load_dataset(run_date.strftime("%Y%m%d"), run_hour)
-        st.success("Dataset berhasil dimuat.")
+        st.success("✅ Dataset berhasil dimuat")
     except Exception as e:
-        st.error("Gagal memuat data.")
+        st.error("❌ Gagal memuat data.")
         st.exception(e)
         st.stop()
 
-    is_contour = False
+    # Inisialisasi parameter
     is_vector = False
+    is_contour = False
 
     if "pratesfc" in parameter:
         var = ds["pratesfc"][forecast_hour, :, :] * 3600
@@ -48,15 +50,15 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         cmap = "Blues"
     elif "tmp2m" in parameter:
         var = ds["tmp2m"][forecast_hour, :, :] - 273.15
-        label = "Suhu (°C)"
+        label = "Suhu Permukaan (°C)"
         cmap = "coolwarm"
     elif "ugrd10m" in parameter:
         u = ds["ugrd10m"][forecast_hour, :, :]
         v = ds["vgrd10m"][forecast_hour, :, :]
-        speed = (u**2 + v**2)**0.5 * 1.94384
+        speed = (u**2 + v**2)**0.5 * 1.94384  # konversi ke knot
         var = speed
         label = "Kecepatan Angin (knot)"
-        cmap = plt.cm.get_cmap("YlGnBu")
+        cmap = "YlGnBu"
         is_vector = True
     elif "prmsl" in parameter:
         var = ds["prmslmsl"][forecast_hour, :, :] / 100
@@ -67,7 +69,7 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         st.warning("Parameter tidak dikenali.")
         st.stop()
 
-    # Fokus ke Kalimantan Barat
+    # Fokus Kalimantan Barat
     lon_min, lon_max = 108, 114
     lat_min, lat_max = -1.5, 2.0
 
@@ -77,6 +79,7 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         u = u.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
         v = v.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
 
+    # Plotting
     fig = plt.figure(figsize=(8, 6))
     ax = plt.axes(projection=ccrs.PlateCarree())
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
@@ -103,8 +106,10 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
                       u.values[::3, ::3], v.values[::3, ::3],
                       transform=ccrs.PlateCarree(), scale=700, width=0.002, color='black')
 
+    # Tambah fitur peta
     ax.coastlines(resolution='10m', linewidth=0.8)
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax.gridlines(draw_labels=True, linestyle="--", color="gray", alpha=0.5)
 
     st.pyplot(fig)
