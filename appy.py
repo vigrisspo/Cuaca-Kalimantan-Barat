@@ -8,8 +8,12 @@ import numpy as np
 from datetime import datetime
 from io import BytesIO
 
+# Konfigurasi halaman
 st.set_page_config(page_title="Prakiraan Cuaca Kalimantan Barat", page_icon="🌦", layout="wide")
+
+# Judul dan Identitas
 st.title("📡 Prakiraan Cuaca Kalimantan Barat dari GFS (Realtime via NOMADS)")
+st.markdown("**Vigris Pranadifo (M8TB_14.24.0016)**")
 st.header("Visualisasi Curah Hujan, Suhu, Angin & Tekanan")
 
 @st.cache_data
@@ -20,7 +24,6 @@ def load_dataset(run_date, run_hour):
 
 # Sidebar
 st.sidebar.title("⚙️ Pengaturan")
-
 today = datetime.utcnow()
 run_date = st.sidebar.date_input("Tanggal Run GFS (UTC)", today.date())
 run_hour = st.sidebar.selectbox("Jam Run GFS (UTC)", ["00", "06", "12", "18"])
@@ -32,7 +35,7 @@ parameter = st.sidebar.selectbox("Parameter", [
     "Tekanan Permukaan Laut (prmslmsl)"
 ])
 
-# Data kota penting Kalimantan Barat
+# Daftar kota utama Kalbar
 kota_kalbar = {
     "Pontianak": (0.02, 109.33),
     "Singkawang": (0.9, 108.98),
@@ -68,7 +71,7 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     elif "ugrd10m" in parameter:
         u = ds["ugrd10m"][forecast_hour, :, :]
         v = ds["vgrd10m"][forecast_hour, :, :]
-        speed = (u**2 + v**2)**0.5 * 1.94384  # knot
+        speed = (u**2 + v**2)**0.5 * 1.94384
         var = speed
         label = "Kecepatan Angin (knot)"
         cmap = plt.cm.get_cmap("RdYlGn_r", 10)
@@ -84,7 +87,7 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         st.warning("Parameter tidak dikenali.")
         st.stop()
 
-    # Area Kalimantan Barat (dengan margin agar tidak terpotong)
+    # Fokus Kalbar (margin aman agar tidak terpotong)
     lat_min, lat_max = -2, 4
     lon_min, lon_max = 107, 115
     var = var.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
@@ -108,43 +111,38 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     ax.set_title(f"GFS {tstr}", loc="right", fontsize=10, fontweight="bold")
 
     if is_contour:
-        cs = ax.contour(lon2d, lat2d, var.values,
-                        levels=15, colors='black', linewidths=0.8,
-                        transform=ccrs.PlateCarree())
+        cs = ax.contour(lon2d, lat2d, var.values, levels=15, colors='black', linewidths=0.8, transform=ccrs.PlateCarree())
         ax.clabel(cs, fmt="%d", colors='black', fontsize=8)
     else:
-        im = ax.pcolormesh(lon2d, lat2d, var.values,
-                           cmap=cmap, vmin=vmin, vmax=vmax,
-                           transform=ccrs.PlateCarree())
+        im = ax.pcolormesh(lon2d, lat2d, var.values, cmap=cmap, vmin=vmin, vmax=vmax, transform=ccrs.PlateCarree())
         cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.02)
         cbar.set_label(label)
 
         if is_vector:
-            ax.quiver(lon2d[::5, ::5], lat2d[::5, ::5],
-                      u.values[::5, ::5], v.values[::5, ::5],
+            ax.quiver(lon2d[::5, ::5], lat2d[::5, ::5], u.values[::5, ::5], v.values[::5, ::5],
                       transform=ccrs.PlateCarree(), scale=700, width=0.002, color='black')
 
-    # Tambahkan fitur peta
+    # Tambahkan peta dasar
     ax.coastlines(resolution='10m', linewidth=0.8)
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
 
-    # Tambahkan pointer lokasi kota
+    # Tampilkan kota-kota utama
     for kota, (lat, lon) in kota_kalbar.items():
         ax.plot(lon, lat, marker='o', color='red', markersize=4, transform=ccrs.PlateCarree())
         ax.text(lon + 0.1, lat + 0.1, kota, fontsize=8, transform=ccrs.PlateCarree())
 
-    # Tampilkan plot
+    # Tampilkan plot di Streamlit
     st.pyplot(fig)
 
-    # Info validasi
+    # Info tambahan
     st.markdown(f"""
     **Waktu Validasi:** {valid_str}  
     **Jam Prakiraan ke-:** {forecast_hour}  
     **Model:** GFS 0.25° via NOMADS  
     """)
 
-    # Tombol unduh gambar
+    # Tombol unduh
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=200)
     st.download_button("💾 Unduh Gambar", buf.getvalue(), file_name=f"{parameter}_{tstr}.png", mime="image/png")
