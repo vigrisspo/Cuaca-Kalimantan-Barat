@@ -6,8 +6,9 @@ import cartopy.feature as cfeature
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from io import BytesIO
 
-st.set_page_config(page_title="Prakiraan Cuaca Kalimantan Barat", layout="wide")
+st.set_page_config(page_title="Prakiraan Cuaca Kalimantan Barat", page_icon="🌦", layout="wide")
 st.title("📡 Prakiraan Cuaca Kalimantan Barat dari GFS (Realtime via NOMADS)")
 st.header("Visualisasi Curah Hujan, Suhu, Angin & Tekanan")
 
@@ -31,6 +32,18 @@ parameter = st.sidebar.selectbox("Parameter", [
     "Tekanan Permukaan Laut (prmslmsl)"
 ])
 
+# Data kota penting Kalimantan Barat
+kota_kalbar = {
+    "Pontianak": (0.02, 109.33),
+    "Singkawang": (0.9, 108.98),
+    "Sambas": (1.4, 109.3),
+    "Ketapang": (-1.8, 110.0),
+    "Sintang": (0.07, 111.5),
+    "Kapuas Hulu": (0.9, 113.9),
+    "Sekadau": (0.02, 110.9),
+    "Melawi": (0.1, 111.5)
+}
+
 if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     try:
         ds = load_dataset(run_date.strftime("%Y%m%d"), run_hour)
@@ -42,7 +55,6 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     is_contour = False
     is_vector = False
 
-    # Ambil variabel berdasarkan parameter
     if "pratesfc" in parameter:
         var = ds["pratesfc"][forecast_hour, :, :] * 3600
         label = "Curah Hujan (mm/jam)"
@@ -72,16 +84,18 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         st.warning("Parameter tidak dikenali.")
         st.stop()
 
-    # Fokus pada Kalimantan Barat: lon 108-114, lat -1 s.d. 3
-    var = var.sel(lat=slice(-1, 3), lon=slice(108, 114))
+    # Area Kalimantan Barat (dengan margin agar tidak terpotong)
+    lat_min, lat_max = -2, 4
+    lon_min, lon_max = 107, 115
+    var = var.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
     if is_vector:
-        u = u.sel(lat=slice(-1, 3), lon=slice(108, 114))
-        v = v.sel(lat=slice(-1, 3), lon=slice(108, 114))
+        u = u.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+        v = v.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
 
-    # Buat plot
-    fig = plt.figure(figsize=(8, 6))
+    # Plot
+    fig = plt.figure(figsize=(10, 7))
     ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.set_extent([108, 114, -1, 3], crs=ccrs.PlateCarree())
+    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
 
     lon2d, lat2d = np.meshgrid(var.lon, var.lat)
 
@@ -115,4 +129,22 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
 
+    # Tambahkan pointer lokasi kota
+    for kota, (lat, lon) in kota_kalbar.items():
+        ax.plot(lon, lat, marker='o', color='red', markersize=4, transform=ccrs.PlateCarree())
+        ax.text(lon + 0.1, lat + 0.1, kota, fontsize=8, transform=ccrs.PlateCarree())
+
+    # Tampilkan plot
     st.pyplot(fig)
+
+    # Info validasi
+    st.markdown(f"""
+    **Waktu Validasi:** {valid_str}  
+    **Jam Prakiraan ke-:** {forecast_hour}  
+    **Model:** GFS 0.25° via NOMADS  
+    """)
+
+    # Tombol unduh gambar
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=200)
+    st.download_button("💾 Unduh Gambar", buf.getvalue(), file_name=f"{parameter}_{tstr}.png", mime="image/png")
