@@ -88,7 +88,7 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         st.stop()
 
     # Fokus Kalbar (margin aman agar tidak terpotong)
-    lat_min, lat_max = -3, 4
+    lat_min, lat_max = -5, 4
     lon_min, lon_max = 107, 115
     var = var.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
     if is_vector:
