@@ -10,6 +10,8 @@ from io import BytesIO
 
 # Konfigurasi halaman
 st.set_page_config(page_title="Prakiraan Cuaca Kalimantan Barat", page_icon="🌦", layout="wide")
+
+# Judul dan Identitas
 st.title("📡 Prakiraan Cuaca Kalimantan Barat dari GFS (Realtime via NOMADS)")
 st.markdown("**Vigris Pranadifo (M8TB_14.24.0016)**")
 st.header("Visualisasi Curah Hujan, Suhu, Angin & Tekanan")
@@ -33,7 +35,7 @@ parameter = st.sidebar.selectbox("Parameter", [
     "Tekanan Permukaan Laut (prmslmsl)"
 ])
 
-# Daftar kota utama di Kalimantan Barat (koordinat perkiraan)
+# Daftar kota utama Kalbar
 kota_kalbar = {
     "Pontianak": (0.02, 109.33),
     "Singkawang": (0.9, 108.98),
@@ -85,15 +87,15 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
         st.warning("Parameter tidak dikenali.")
         st.stop()
 
-    # Batas koordinat wilayah: 108–115 BT, 2.5 LU – 3.5 LS
-    lon_min, lon_max = 108, 115
-    lat_max, lat_min = 2.5, -3.5  # slice dari utara ke selatan
-
-    var = var.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
+    # Fokus Kalbar (margin aman agar tidak terpotong)
+    lat_min, lat_max = -2, 4
+    lon_min, lon_max = 107, 115
+    var = var.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
     if is_vector:
-        u = u.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
-        v = v.sel(lat=slice(lat_max, lat_min), lon=slice(lon_min, lon_max))
+        u = u.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+        v = v.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
 
+    # Plot
     fig = plt.figure(figsize=(10, 7))
     ax = plt.axes(projection=ccrs.PlateCarree())
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
@@ -120,22 +122,27 @@ if st.sidebar.button("🔎 Tampilkan Visualisasi"):
             ax.quiver(lon2d[::5, ::5], lat2d[::5, ::5], u.values[::5, ::5], v.values[::5, ::5],
                       transform=ccrs.PlateCarree(), scale=700, width=0.002, color='black')
 
+    # Tambahkan peta dasar
     ax.coastlines(resolution='10m', linewidth=0.8)
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
 
+    # Tampilkan kota-kota utama
     for kota, (lat, lon) in kota_kalbar.items():
         ax.plot(lon, lat, marker='o', color='red', markersize=4, transform=ccrs.PlateCarree())
         ax.text(lon + 0.1, lat + 0.1, kota, fontsize=8, transform=ccrs.PlateCarree())
 
+    # Tampilkan plot di Streamlit
     st.pyplot(fig)
 
+    # Info tambahan
     st.markdown(f"""
     **Waktu Validasi:** {valid_str}  
     **Jam Prakiraan ke-:** {forecast_hour}  
     **Model:** GFS 0.25° via NOMADS  
     """)
 
+    # Tombol unduh
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=200)
     st.download_button("💾 Unduh Gambar", buf.getvalue(), file_name=f"{parameter}_{tstr}.png", mime="image/png")
